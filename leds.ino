@@ -53,18 +53,22 @@ void loop(){
  */
 void cycleLeds() {
   if (lights == TURNING_ON) {
-    leds[lightedLeds++] = CHSV(hue++, 255, 255);
+    leds[NUM_LEDS / 2 - lightedLeds - 1] = CHSV(100, 255, 255);
+    leds[NUM_LEDS / 2 + lightedLeds] = CHSV(100, 255, 255);
+    lightedLeds++;
   } else {
-    leds[lightedLeds--] = CRGB::Black;
+    leds[NUM_LEDS / 2 - lightedLeds - 1] = CRGB::Black;
+    leds[NUM_LEDS / 2 + lightedLeds] = CRGB::Black;
+    lightedLeds--;
   }
   FastLED.show();
 
   if (lightedLeds < 0) {
     ledAction.disable();
     lightedLeds = 0;
-  } else if (lightedLeds >= NUM_LEDS) {
+  } else if (lightedLeds >= NUM_LEDS / 2) {
     ledAction.disable();
-    lightedLeds = NUM_LEDS - 1;
+    lightedLeds = NUM_LEDS / 2 - 1;
   }
 }
 
