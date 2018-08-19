@@ -1,5 +1,9 @@
-/*
+  /*
  * Lights up the leds when motion is detected. Lights off the leds after a short delay when no motion is detected anymore.
+ * 
+ * Requires:
+ * TimedAction (http://playground.arduino.cc/code/TimedAction#Download)
+ * FastLed (http://fastled.io/)
  */
 
 #include <FastLED.h>
