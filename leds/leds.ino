@@ -9,11 +9,18 @@
 #define LED_DATA_PIN 6
 #define PIR_DATA_PIN 2
 
+// Defines how long the leds are lit after motion is detected
+#define LIGHTS_ON_DURATION 2000
+
 CRGB leds[NUM_LEDS];
 
-TimedAction motionAction = TimedAction(1000, checkMotion);
+void checkMotion();
+void cycleLeds();
+void lightsOff();
+
+TimedAction motionAction = TimedAction(100, checkMotion);
 TimedAction ledAction = TimedAction(20, cycleLeds);
-TimedAction offAction = TimedAction(2000, lightsOff);
+TimedAction offAction = TimedAction(LIGHTS_ON_DURATION, lightsOff);
 
 enum State {
   NO_MOTION,
@@ -23,7 +30,7 @@ enum State {
 enum Lights {
   TURNING_ON,
   TURNING_OFF
-}
+};
 
 State state = NO_MOTION;
 Lights lights = TURNING_OFF;
@@ -43,7 +50,7 @@ void setup() {
  * Runs the timed actions
  */
 void loop(){
-  timedAction.check();
+  motionAction.check();
   ledAction.check();
   offAction.check();
 }
@@ -53,8 +60,8 @@ void loop(){
  */
 void cycleLeds() {
   if (lights == TURNING_ON) {
-    leds[NUM_LEDS / 2 - lightedLeds - 1] = CHSV(100, 255, 255);
-    leds[NUM_LEDS / 2 + lightedLeds] = CHSV(100, 255, 255);
+    leds[NUM_LEDS / 2 - lightedLeds - 1] = CHSV(100, 255, 55);
+    leds[NUM_LEDS / 2 + lightedLeds] = CHSV(100, 255, 55);
     lightedLeds++;
   } else {
     leds[NUM_LEDS / 2 - lightedLeds - 1] = CRGB::Black;
@@ -84,8 +91,9 @@ void checkMotion() {
       if (state == NO_MOTION) {
         // If this was the first time the motion was detected light up the leds
         lights = TURNING_ON;
-        cycleLeds.enable();
-        cycleLeds.reset();
+        ledAction.setInterval(20);
+        ledAction.enable();
+        ledAction.reset();
         state = MOTION;
       }
   }
@@ -97,7 +105,8 @@ void checkMotion() {
 void lightsOff() {
   offAction.disable();
   lights = TURNING_OFF;
-  cycleLeds.enable();
-  cycleLeds.reset();
+  ledAction.setInterval(200);
+  ledAction.enable();
+  ledAction.reset();
   state = NO_MOTION;
 }
