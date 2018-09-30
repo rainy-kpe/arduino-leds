@@ -1,4 +1,4 @@
-  /*
+/*
  * Lights up the leds when motion is detected. Lights off the leds after a short delay when no motion is detected anymore.
  * 
  * Test board: Arduino One
@@ -11,6 +11,9 @@
 
 #include <FastLED.h>
 #include <TimedAction.h>
+#include <LowPower.h>
+
+// #define DEBUG 1
 
 #define NUM_LEDS 72
 #define LED_DATA_PIN 6
@@ -21,10 +24,12 @@
 #define LIGHTS_ON_DURATION 4000
 // Defines how long to wait before lighting the leds after motion is detected
 #define LIGHTS_ON_DELAY 1000
+// Defines how quickly individual leds are turned off
+#define LIGHTS_ON_INTERVAL 20
+// Defines how quickly individual leds are turned off
+#define LIGHTS_OFF_INTERVAL 400
 // Defines the limit of dark in the room before lighting up the leds (smaller value is darker)
-#define PHOTO_RESISTOR_LIMIT 200
-
-//     cxxx#define DEBUG 1
+#define PHOTO_RESISTOR_LIMIT 5
 
 CRGB leds[NUM_LEDS];
 
@@ -36,7 +41,7 @@ void lightsOff();
 TimedAction motionAction = TimedAction(1000, checkMotion);
 TimedAction ledAction = TimedAction(20, cycleLeds);
 TimedAction offAction = TimedAction(LIGHTS_ON_DURATION, lightsOff);
-TimedAction waitAction = TimedAction(LIGHTS_ON_DELAY, lightsOn);
+TimedAction onAction = TimedAction(LIGHTS_ON_DELAY, lightsOn);
 
 #ifdef DEBUG
 void readSensors();
@@ -74,7 +79,7 @@ void setup() {
 
   offAction.disable();
   ledAction.disable();
-  waitAction.disable();
+  onAction.disable();
 }
 
 /*
@@ -84,10 +89,15 @@ void loop(){
   motionAction.check();
   ledAction.check();
   offAction.check();
-  waitAction.check();
+  onAction.check();
 #ifdef DEBUG
   sensorsAction.check();
 #endif
+
+  // Go to the low power mode if there is no motion detected
+  if (lights == ALL_OFF || lights == ALL_ON) {
+    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF); 
+  }
 }
 
 /*
@@ -135,14 +145,14 @@ void checkMotion() {
         Serial.write("Leds are turning off. Let's relight them.\n");
 #endif
         lights = TURNING_ON;
-        ledAction.setInterval(20);
+        ledAction.setInterval(LIGHTS_ON_INTERVAL);
         ledAction.enable();
         ledAction.reset();
       } else {
         // If this was the first time the motion was detected light up the leds
         Serial.write("Lighting the leds after delay\n");
-        waitAction.enable();
-        waitAction.reset();
+        onAction.enable();
+        onAction.reset();
       }
       state = MOTION;
     }
@@ -156,7 +166,7 @@ void lightsOn() {
 #ifdef DEBUG
   Serial.write("Delay ended\n");
 #endif
-  waitAction.disable();
+  onAction.disable();
   
   // Turn the leds on only if it's dark
   int value = analogRead(PHOTORESISTOR_DATA_PIN);
@@ -184,7 +194,7 @@ void lightsOff() {
 #endif
   offAction.disable();
   lights = TURNING_OFF;
-  ledAction.setInterval(200);
+  ledAction.setInterval(LIGHTS_OFF_INTERVAL);
   ledAction.enable();
   ledAction.reset();
   state = NO_MOTION;
