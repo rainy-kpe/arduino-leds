@@ -22,14 +22,12 @@
 
 // Defines how long the leds are lit after motion is detected
 #define LIGHTS_ON_DURATION 4000
-// Defines how long to wait before lighting the leds after motion is detected
-#define LIGHTS_ON_DELAY 1000
 // Defines how quickly individual leds are turned off
 #define LIGHTS_ON_INTERVAL 20
 // Defines how quickly individual leds are turned off
 #define LIGHTS_OFF_INTERVAL 400
 // Defines the limit of dark in the room before lighting up the leds (smaller value is darker)
-#define PHOTO_RESISTOR_LIMIT 5
+#define PHOTO_RESISTOR_LIMIT 10
 
 CRGB leds[NUM_LEDS];
 
@@ -41,7 +39,6 @@ void lightsOff();
 TimedAction motionAction = TimedAction(1000, checkMotion);
 TimedAction ledAction = TimedAction(20, cycleLeds);
 TimedAction offAction = TimedAction(LIGHTS_ON_DURATION, lightsOff);
-TimedAction onAction = TimedAction(LIGHTS_ON_DELAY, lightsOn);
 
 #ifdef DEBUG
 void readSensors();
@@ -76,28 +73,31 @@ void setup() {
   pinMode(PIR_DATA_PIN, INPUT);
   digitalWrite(PIR_DATA_PIN, LOW);
   FastLED.addLeds<WS2812, LED_DATA_PIN>(leds, NUM_LEDS);
+  FastLED.clear();
+  FastLED.show();
 
   offAction.disable();
   ledAction.disable();
-  onAction.disable();
 }
 
 /*
  * Runs the timed actions
  */
 void loop(){
-  motionAction.check();
   ledAction.check();
   offAction.check();
-  onAction.check();
 #ifdef DEBUG
+  motionAction.check();
   sensorsAction.check();
-#endif
-
+#else
   // Go to the low power mode if there is no motion detected
-  if (lights == ALL_OFF || lights == ALL_ON) {
-    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF); 
+  if (lights == ALL_OFF) {
+    checkMotion();
+    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
+  } else {
+    motionAction.check();
   }
+#endif
 }
 
 /*
@@ -132,9 +132,6 @@ void cycleLeds() {
 void checkMotion() {
   int val = digitalRead(PIR_DATA_PIN);
   if (val == HIGH) {
-#ifdef DEBUG
-    Serial.write("Motion detected\n");
-#endif
     digitalWrite(PIR_DATA_PIN, LOW);
     // Motion detected. Restart the lights off timer
     offAction.enable();
@@ -142,7 +139,7 @@ void checkMotion() {
     if (state == NO_MOTION) {
       if (lights == TURNING_OFF) {
 #ifdef DEBUG
-        Serial.write("Leds are turning off. Let's relight them.\n");
+        Serial.write("Leds are turning off. Let's relight0 them.\n");
 #endif
         lights = TURNING_ON;
         ledAction.setInterval(LIGHTS_ON_INTERVAL);
@@ -150,9 +147,7 @@ void checkMotion() {
         ledAction.reset();
       } else {
         // If this was the first time the motion was detected light up the leds
-        Serial.write("Lighting the leds after delay\n");
-        onAction.enable();
-        onAction.reset();
+        lightsOn();      
       }
       state = MOTION;
     }
@@ -162,12 +157,7 @@ void checkMotion() {
 /*
  * Action which starts the action to turn the lights on
 */
-void lightsOn() {
-#ifdef DEBUG
-  Serial.write("Delay ended\n");
-#endif
-  onAction.disable();
-  
+void lightsOn() {  
   // Turn the leds on only if it's dark
   int value = analogRead(PHOTORESISTOR_DATA_PIN);
   if (value < PHOTO_RESISTOR_LIMIT) {
@@ -180,7 +170,7 @@ void lightsOn() {
     ledAction.reset();
   } else {
 #ifdef DEBUG
-    Serial.write("Lights are on so no need to do anything\n");
+    Serial.write("It's not dark so no need to do anything\n");
 #endif
   }
 }
@@ -189,15 +179,22 @@ void lightsOn() {
  * Action which starts the action to turn the lights off
  */
 void lightsOff() {
-#ifdef DEBUG
-  Serial.write("Turning the lights off\n");
-#endif
   offAction.disable();
-  lights = TURNING_OFF;
-  ledAction.setInterval(LIGHTS_OFF_INTERVAL);
-  ledAction.enable();
-  ledAction.reset();
   state = NO_MOTION;
+  
+  if (lights != ALL_OFF) {
+#ifdef DEBUG
+    Serial.write("Turning the lights off\n");
+#endif
+    lights = TURNING_OFF;
+    ledAction.setInterval(LIGHTS_OFF_INTERVAL);
+    ledAction.enable();
+    ledAction.reset();
+  } else {
+#ifdef DEBUG
+    Serial.write("All lights are already off so no need to do anything\n");
+#endif
+  }
 }
 
 /*
@@ -208,10 +205,17 @@ void readSensors() {
   int valuePR = analogRead(PHOTORESISTOR_DATA_PIN);
   int valuePIR = digitalRead(PIR_DATA_PIN);
 
-  Serial.write("Photoresistor: ");
+  Serial.print(millis());
+  Serial.write(" - Photoresistor: ");
   Serial.print(valuePR);
   Serial.write(" - PIR motion sensor: ");
   Serial.print(valuePIR);
+  Serial.write(" - Lights: ");
+  Serial.print(lights);
+  Serial.write(" - State: ");
+  Serial.print(state);
+  Serial.write(" - Leds: ");
+  Serial.print(litLeds);
   Serial.write("\n");
 }
 #endif
