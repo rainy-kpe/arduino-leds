@@ -21,25 +21,25 @@
 #define PHOTORESISTOR_DATA_PIN A5
 #define BUILTIN_LED_PIN 13
 
-// Defines how long the leds are lit after motion is detected
-#define LIGHTS_ON_DURATION 4000
 // Defines how quickly individual leds are turned off
 #define LIGHTS_ON_INTERVAL 20
 // Defines how quickly individual leds are turned off
 #define LIGHTS_OFF_INTERVAL 400
 // Defines the limit of dark in the room before lighting up the leds (smaller value is darker)
-#define PHOTO_RESISTOR_LIMIT 100
+#define PHOTO_RESISTOR_LIMIT 5
 
 CRGB leds[NUM_LEDS];
 
 void checkMotion();
 void cycleLeds();
-void lightsOn();
-void lightsOff();
+void checkDark();
+
+bool lightsOn();
+void lightsOff(bool fast);
 
 TimedAction motionAction = TimedAction(500, checkMotion);
 TimedAction ledAction = TimedAction(20, cycleLeds);
-TimedAction offAction = TimedAction(LIGHTS_ON_DURATION, lightsOff);
+TimedAction darkAction = TimedAction(500, checkDark);
 
 #ifdef DEBUG
 void readSensors();
@@ -61,6 +61,7 @@ enum Lights {
 State state = NO_MOTION;
 Lights lights = ALL_OFF;
 int litLeds = 0;
+bool lightGuard = false;
 
 /*
  * Sets up the leds and pins
@@ -77,7 +78,6 @@ void setup() {
   FastLED.clear();
   FastLED.show();
 
-  offAction.disable();
   ledAction.disable();
 }
 
@@ -86,10 +86,10 @@ void setup() {
  */
 void loop(){
   ledAction.check();
-  offAction.check();
 #ifdef DEBUG
   motionAction.check();
   sensorsAction.check();
+  darkAction.check();
 #else
   // Go to the low power mode if there is no motion detected
   if (lights == ALL_OFF) {
@@ -97,6 +97,7 @@ void loop(){
     LowPower.powerDown(SLEEP_500MS, ADC_OFF, BOD_OFF);
   } else {
     motionAction.check();
+    checkDark();
   }
 #endif
 }
@@ -134,69 +135,76 @@ void checkMotion() {
   int val = digitalRead(PIR_DATA_PIN);
   if (val == HIGH) {
     digitalWrite(PIR_DATA_PIN, LOW);
-    digitalWrite(BUILTIN_LED_PIN, HIGH);
+    // digitalWrite(BUILTIN_LED_PIN, val);
     
-    // Motion detected. Restart the lights off timer
-    offAction.enable();
-    offAction.reset();
-    if (state == NO_MOTION) {
-      if (lights == TURNING_OFF) {
+    if (state == NO_MOTION || lights == ALL_OFF) {
 #ifdef DEBUG
-        Serial.write("Leds are turning off. Let's relight them.\n");
+      Serial.write("CheckMotion() -> New motion detected\n");
 #endif
-        lights = TURNING_ON;
-        ledAction.setInterval(LIGHTS_ON_INTERVAL);
-        ledAction.enable();
-        ledAction.reset();
-      } else {
-        // If this was the first time the motion was detected light up the leds
-        lightsOn();      
-      }
       state = MOTION;
+      if (!lightsOn()) {
+        // If lights were not lit because it wasn't dark. Do not lit the lights until there is no motion detected anymore.
+        lightGuard = true;
+      }
     }
   } else {
-    digitalWrite(BUILTIN_LED_PIN, LOW);
+    if (state == MOTION) {
+#ifdef DEBUG
+      Serial.write("CheckMotion(NOT) -> No more motion detected\n");
+#endif
+      state = NO_MOTION;
+      lightsOff(false);
+    }
+    lightGuard = false;   // From now on the lights can be lit again
+  }
+}
+
+/*
+ * Action which turns lights off if it's not dark anymore
+*/
+void checkDark() {
+  if (lights == ALL_ON && !isDark()) {
+    lightsOff(true);
   }
 }
 
 /*
  * Action which starts the action to turn the lights on
 */
-void lightsOn() {  
+bool lightsOn() {  
   // Turn the leds on only if it's dark
-  if (isDark()) {
+  if (!lightGuard && isDark()) {
 #ifdef DEBUG
-    Serial.write("It's dark so lets light up the leds\n");
+    Serial.write("LightsOn() -> It's dark so lets light up the leds\n");
 #endif
     lights = TURNING_ON;
-    ledAction.setInterval(20);
+    ledAction.setInterval(LIGHTS_ON_INTERVAL);
     ledAction.enable();
     ledAction.reset();
+    return true;
   } else {
 #ifdef DEBUG
-    Serial.write("It's not dark so no need to do anything\n");
+    Serial.write("LightsOn(NOT) -> It's not dark (or it wasn't when the motion was detected) so no need to do anything\n");
 #endif
+    return false;
   }
 }
 
 /*
  * Action which starts the action to turn the lights off
  */
-void lightsOff() {
-  offAction.disable();
-  state = NO_MOTION;
-  
-  if (lights != ALL_OFF) {
+void lightsOff(bool fast) {
+    if (lights != ALL_OFF) {
 #ifdef DEBUG
-    Serial.write("Turning the lights off\n");
+    Serial.write("LightsOff() -> Turning the lights off\n");
 #endif
     lights = TURNING_OFF;
-    ledAction.setInterval(LIGHTS_OFF_INTERVAL);
+    ledAction.setInterval(fast ? LIGHTS_ON_INTERVAL : LIGHTS_OFF_INTERVAL);
     ledAction.enable();
     ledAction.reset();
   } else {
 #ifdef DEBUG
-    Serial.write("All lights are already off so no need to do anything\n");
+    Serial.write("LightsOff(NOT) -> All lights are already off so no need to do anything\n");
 #endif
   }
 }
@@ -204,8 +212,8 @@ void lightsOff() {
 /*
  * Returns true if its datk
  */
-#define AVERAGE_LENGTH = 3
-void isDark() {
+#define AVERAGE_LENGTH 3
+bool isDark() {
   int total = 0;
   for (int i = 0; i < AVERAGE_LENGTH; i++) {
     total += analogRead(PHOTORESISTOR_DATA_PIN);
@@ -214,7 +222,12 @@ void isDark() {
      }
   }
   int average = total / AVERAGE_LENGTH;
-  return (value < PHOTO_RESISTOR_LIMIT);
+#ifdef DEBUG
+  Serial.write("Photoresistor average: ");
+  Serial.print(average);
+  Serial.write("\n");
+#endif
+  return (average < PHOTO_RESISTOR_LIMIT);
 }
 
 #ifdef DEBUG
