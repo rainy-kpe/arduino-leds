@@ -19,6 +19,7 @@
 #define LED_DATA_PIN 6
 #define PIR_DATA_PIN 2
 #define PHOTORESISTOR_DATA_PIN A5
+#define BUILTIN_LED_PIN 13
 
 // Defines how long the leds are lit after motion is detected
 #define LIGHTS_ON_DURATION 4000
@@ -27,7 +28,7 @@
 // Defines how quickly individual leds are turned off
 #define LIGHTS_OFF_INTERVAL 400
 // Defines the limit of dark in the room before lighting up the leds (smaller value is darker)
-#define PHOTO_RESISTOR_LIMIT 10
+#define PHOTO_RESISTOR_LIMIT 100
 
 CRGB leds[NUM_LEDS];
 
@@ -36,7 +37,7 @@ void cycleLeds();
 void lightsOn();
 void lightsOff();
 
-TimedAction motionAction = TimedAction(1000, checkMotion);
+TimedAction motionAction = TimedAction(500, checkMotion);
 TimedAction ledAction = TimedAction(20, cycleLeds);
 TimedAction offAction = TimedAction(LIGHTS_ON_DURATION, lightsOff);
 
@@ -93,7 +94,7 @@ void loop(){
   // Go to the low power mode if there is no motion detected
   if (lights == ALL_OFF) {
     checkMotion();
-    LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
+    LowPower.powerDown(SLEEP_500MS, ADC_OFF, BOD_OFF);
   } else {
     motionAction.check();
   }
@@ -133,13 +134,15 @@ void checkMotion() {
   int val = digitalRead(PIR_DATA_PIN);
   if (val == HIGH) {
     digitalWrite(PIR_DATA_PIN, LOW);
+    digitalWrite(BUILTIN_LED_PIN, HIGH);
+    
     // Motion detected. Restart the lights off timer
     offAction.enable();
     offAction.reset();
     if (state == NO_MOTION) {
       if (lights == TURNING_OFF) {
 #ifdef DEBUG
-        Serial.write("Leds are turning off. Let's relight0 them.\n");
+        Serial.write("Leds are turning off. Let's relight them.\n");
 #endif
         lights = TURNING_ON;
         ledAction.setInterval(LIGHTS_ON_INTERVAL);
@@ -151,6 +154,8 @@ void checkMotion() {
       }
       state = MOTION;
     }
+  } else {
+    digitalWrite(BUILTIN_LED_PIN, LOW);
   }
 }
 
@@ -159,8 +164,7 @@ void checkMotion() {
 */
 void lightsOn() {  
   // Turn the leds on only if it's dark
-  int value = analogRead(PHOTORESISTOR_DATA_PIN);
-  if (value < PHOTO_RESISTOR_LIMIT) {
+  if (isDark()) {
 #ifdef DEBUG
     Serial.write("It's dark so lets light up the leds\n");
 #endif
@@ -198,8 +202,21 @@ void lightsOff() {
 }
 
 /*
- * Action which outputs the sensor values
+ * Returns true if its datk
  */
+#define AVERAGE_LENGTH = 3
+void isDark() {
+  int total = 0;
+  for (int i = 0; i < AVERAGE_LENGTH; i++) {
+    total += analogRead(PHOTORESISTOR_DATA_PIN);
+    if (i != AVERAGE_LENGTH - 1) {
+      delay(10);
+     }
+  }
+  int average = total / AVERAGE_LENGTH;
+  return (value < PHOTO_RESISTOR_LIMIT);
+}
+
 #ifdef DEBUG
 void readSensors() {
   int valuePR = analogRead(PHOTORESISTOR_DATA_PIN);
